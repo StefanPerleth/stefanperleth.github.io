@@ -1,0 +1,229 @@
+---
+title: "Project Practical Machine Learning"
+author: "Stefan Perleth"
+date: "29/07/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = FALSE)
+```
+
+## Download and save files
+
+Download and save files. Data directory is build
+
+```{r}
+trainUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+if (!file.exists("./data")) dir.create("./data")
+download.file(trainUrl, destfile = "./data/pml-training.csv", method = "libcurl")
+
+
+testUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+download.file(testUrl, destfile = "./data/pml-testing.csv", method = "libcurl")
+
+```
+
+## Datacleaning
+
+Read in the training file and check his structure.
+Get an overview of the variables
+
+```{r}
+training <- read.csv("./data/pml-training.csv", na.strings = c("NA", "#DIV/0!"))
+
+str(training, list.len=ncol(training))
+
+summary(training)
+```
+
+Remove all empty variables
+
+```{r}
+out <- unlist(lapply(training, is.logical))
+training1 <- training[, !out]
+summary(training1)
+```
+
+Remove all variables with zero variance. Don't touch factors so far.
+
+```{r}
+out2 <- unlist(lapply(training1, is.factor))
+sdt <- unlist(lapply(training1[, !out2], sd, na.rm = TRUE))
+sdtout <- sdt[sdt == 0]
+sdtout
+training2 <- training1[, !(names(training1) %in% names(sdtout))]
+options('max.print' = 100000)
+summary(training2)
+```
+
+Delete all variables with missing data.
+
+```{r}
+isNA <- apply(is.na(training2), 2, sum)
+training3 <- training2[, !(isNA > 0)]
+```
+
+Ignore variable which are not meaningfull for the model
+
+```{r}
+training4 <- training3[, -c(1:7)]
+```
+
+## Models
+
+In case that I want to combine models, build a validation datsetv out of the training data
+
+```{r}
+library(caret)
+inTrain4 <- createDataPartition(y = training4$classe, p = 0.7, list = FALSE)
+
+training4train <- training4[inTrain4,]
+training4valid <- training4[-inTrain4,]
+```
+
+Four models are calculated an tested:
+LDA
+Tree
+Boosting 
+Random Forest
+
+```{r}
+### LDA
+modLDA <- train(classe ~ ., data = training4train, method = "lda")
+print(modLDA)
+predLDA <- predict(modLDA, data = training4)
+checkLDA <- confusionMatrix(predLDA, training4$classe)
+checkLDA
+
+predLDAval <- predict(modLDA, newdata = training4valid)
+length(predLDAval)
+checkLDAval <- confusionMatrix(predLDAval, training4valid$classe)
+checkLDAval
+
+### Tree
+modTREE <- train(classe ~ ., data = training4train, method = "rpart")
+modTREE
+predTREE <- predict(modTREE, data = training4train)
+checkTREE <- confusionMatrix(predTREE, training4train$classe)
+checkTREE
+
+predTREEval <- predict(modTREE, newdata = training4valid)
+length(predTREEval)
+checkTREEval <- confusionMatrix(predTREEval, training4valid$classe)
+checkTREEval
+
+### Boosting
+modGBM <- train(classe ~ ., data = training4train, method = "gbm", verbose = FALSE)
+predGBM <- predict(modGBM, data = training4train)
+checkGBM <- confusionMatrix(predGBM, training4train$classe)
+checkGBM
+
+predGBMval <- predict(modGBM, newdata = training4valid)
+length(predGBMval)
+checkGBMval <- confusionMatrix(predGBMval, training4valid$classe)
+checkGBMval
+
+#### Random Forest
+modRF <- train(classe ~ ., data = training4train, method = "rf", verbose = FALSE)
+predRF <- predict(modRF, data = training4train)
+checkRF <- confusionMatrix(predRF, training4train$classe)
+checkRF
+
+predRFval <- predict(modRF, newdata = training4valid)
+checkRFval <- confusionMatrix(predRFval, training4valid$classe)
+checkRFval
+```
+
+## Result
+
+Accuracy in training and validation data set
+
+                     
+LDA:  
+Training 0.7048 Validation 0.6902  
+  
+Tree:  
+Training 0.4958 Validation 0.4958
+  
+Boosting  
+Training 0.9751 Validation 0.9628  
+  
+Random Forest  
+Training 1.0000 Validation 0.9910  
+
+Best results with Random Forest, also stable in the validation data set
+
+```{r}
+##### checkRF
+#Confusion Matrix and Statistics
+
+#          Reference
+#Prediction    A    B    C    D    E
+#         A 3906    0    0    0    0
+#         B    0 2658    0    0    0
+#         C    0    0 2396    0    0
+#         D    0    0    0 2252    0
+#         E    0    0    0    0 2525
+
+#Overall Statistics
+                                     
+#               Accuracy : 1          
+#                 95% CI : (0.9997, 1)
+#    No Information Rate : 0.2843     
+#    P-Value [Acc > NIR] : < 2.2e-16  
+                                     
+#                  Kappa : 1          
+                                     
+# Mcnemar's Test P-Value : NA         
+
+#Statistics by Class:
+
+#                     Class: A Class: B Class: C Class: D Class: E
+# Sensitivity            1.0000   1.0000   1.0000   1.0000   1.0000
+# Specificity            1.0000   1.0000   1.0000   1.0000   1.0000
+# Pos Pred Value         1.0000   1.0000   1.0000   1.0000   1.0000
+# Neg Pred Value         1.0000   1.0000   1.0000   1.0000   1.0000
+# Prevalence             0.2843   0.1935   0.1744   0.1639   0.1838
+# Detection Rate         0.2843   0.1935   0.1744   0.1639   0.1838
+# Detection Prevalence   0.2843   0.1935   0.1744   0.1639   0.1838
+# Balanced Accuracy      1.0000   1.0000   1.0000   1.0000   1.0000
+
+
+### checkRFval
+#Confusion Matrix and Statistics
+
+#          Reference
+# Prediction    A    B    C    D    E
+#          A 1670   11    0    0    0
+#          B    3 1128   13    1    0
+#          C    1    0 1007   14    0
+#          D    0    0    6  948    3
+#          E    0    0    0    1 1079
+
+# Overall Statistics
+                                          
+#                Accuracy : 0.991           
+#                  95% CI : (0.9882, 0.9932)
+#     No Information Rate : 0.2845          
+#     P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+#                  Kappa : 0.9886          
+                                          
+# Mcnemar's Test P-Value : NA              
+
+# Statistics by Class:
+
+#                      Class: A Class: B Class: C Class: D Class: E
+# Sensitivity            0.9976   0.9903   0.9815   0.9834   0.9972
+# Specificity            0.9974   0.9964   0.9969   0.9982   0.9998
+# Pos Pred Value         0.9935   0.9852   0.9853   0.9906   0.9991
+# Neg Pred Value         0.9990   0.9977   0.9961   0.9968   0.9994
+# Prevalence             0.2845   0.1935   0.1743   0.1638   0.1839
+# Detection Rate         0.2838   0.1917   0.1711   0.1611   0.1833
+# Detection Prevalence   0.2856   0.1946   0.1737   0.1626   0.1835
+# Balanced Accuracy      0.9975   0.9934   0.9892   0.9908   0.9985
+```
+
